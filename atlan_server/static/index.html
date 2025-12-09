@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlan AI | Cognitive Observability</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;800&display=swap" rel="stylesheet">
+    <style>
+        .hero {
+            text-align: center;
+            padding: 8rem 2rem;
+            background: radial-gradient(circle at top center, rgba(6, 182, 212, 0.1) 0%, transparent 60%);
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: #94a3b8;
+            max-width: 600px;
+            margin: 0 auto 3rem auto;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 4rem;
+        }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 2rem;
+            border-radius: 8px;
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: var(--accent-color);
+        }
+
+        .card h3 {
+            margin-top: 0;
+        }
+
+        .cta-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .btn-outline {
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            padding: 0.5rem 1.2rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo"><img src="images/logo.png" alt="Mid-Atlantic AI"></div>
+        <div class="nav-links">
+            <a href="/" class="active">Product</a>
+            <a href="/static/whitepaper.html">Whitepaper</a>
+            <a href="/static/demo.html">Interactive Demo</a>
+            <a href="/static/dashboard.html">Dashboard</a>
+            <a href="/static/guardrail.html">Guardrail</a>
+        </div>
+        <a href="/static/demo.html" class="btn">Try Analysis</a>
+    </nav>
+
+    <div class="hero">
+        <h1>Stop LLM Hallucinations<br>With Math, Not Prompts.</h1>
+        <p>The first deterministic "Truth Layer" for Enterprise AI. We use Resonant Cognitive Architecture/Symbolic
+            Interference to sound-check your LLM against verified ground truth.</p>
+
+        <div class="cta-group">
+            <a href="/static/demo.html" class="btn">Launch Interactive Demo</a>
+            <a href="/static/whitepaper.html" class="btn-outline">Read the Whitepaper</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2 style="text-align: center; border: none;">Why Deterministic Guardrails?</h2>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Fail-Closed Security</h3>
+                <p>Most guardrails are "Fail-Open" (probabilistic). Atlan is <strong>Fail-Closed</strong>. If a concept
+                    has no mathematical precedent in your Truth Graph, it creates Dissonance and is blocked by default.
+                </p>
+            </div>
+            <div class="card">
+                <h3>Harmonic Resonance</h3>
+                <p>We map knowledge to stability signatures. "30 Days" and "One Month" are harmonic equivalents
+                    (Octaves). "No Returns" is a Tritone (Dissonant). We measure meaning, we don't just match keywords.
+                </p>
+            </div>
+            <div class="card">
+                <h3>Enterprise Scale</h3>
+                <p>Built for speed (< 21ms latency) and scale (O(1) lookup). Dockerized for on-premise deployment. Keep
+                        your data private and your AI honest.</p>
+            </div>
+        </div>
+
+        <div style="margin-top: 6rem; text-align: center;">
+            <p style="color: #64748b; font-size: 0.9rem;">TRUSTED BY ... NOBODY YET, BUT SOON.</p>
+            <img src="images/architecture_diagram_1765037655651.png" alt="Architecture"
+                style="opacity: 0.7; max-width: 80%;">
+        </div>
+    </div>
+
+</body>
+
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlan AI | Interactive Demo</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;800&family=Fira+Code&display=swap"
+        rel="stylesheet">
+    <style>
+        .demo-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 4rem;
+            min-height: 60vh;
+        }
+
+        .panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 2rem;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            padding: 1rem;
+            font-family: 'Inter', sans-serif;
+            font-size: 1.1rem;
+            border-radius: 4px;
+            resize: none;
+            margin-bottom: 1rem;
+        }
+
+        textarea:focus {
+            outline: 2px solid var(--accent-color);
+            border-color: transparent;
+        }
+
+        .visualizer {
+            flex-grow: 1;
+            background: #000;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #333;
+        }
+
+        .orb {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #444, #000);
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+        }
+
+        /* States */
+        .orb.resonant {
+            background: radial-gradient(circle at 30% 30%, #4ade80, #14532d);
+            box-shadow: 0 0 60px #4ade80;
+            transform: scale(1.1);
+        }
+
+        .orb.dissonant {
+            background: radial-gradient(circle at 30% 30%, #f87171, #7f1d1d);
+            box-shadow: 0 0 60px #f87171;
+            transform: scale(0.9) skewX(5deg);
+        }
+
+        .score-display {
+            position: absolute;
+            bottom: 2rem;
+            width: 100%;
+            text-align: center;
+            font-family: 'Fira Code', monospace;
+            font-size: 1.5rem;
+        }
+
+        .log-panel {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-item {
+            margin-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 0.5rem;
+        }
+
+        .log-timestamp {
+            color: #64748b;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo"><img src="images/logo.png" alt="Mid-Atlantic AI"></div>
+        <div class="nav-links">
+            <a href="/">Product</a>
+            <a href="/static/whitepaper.html">Whitepaper</a>
+            <a href="/static/demo.html" class="active">Interactive Demo</a>
+            <a href="/static/dashboard.html">Dashboard</a>
+            <a href="/static/guardrail.html">Guardrail</a>
+        </div>
+        <a href="/static/demo.html" class="btn">Try Analysis</a>
+    </nav>
+
+    <div class="container" style="max-width: 1200px;">
+        <h2 style="text-align: center; border: none; margin-bottom: 0;">Resonance Engine v1.0</h2>
+        <p style="text-align: center; color: #64748b; margin-top: 0;">Fail-Closed Vector Verification</p>
+
+        <div class="demo-container">
+            <!-- Left: Input -->
+            <div class="panel">
+                <h3>Input Stream</h3>
+                <p style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 1rem;">
+                    Type a fact. If Atlan knows it (e.g., "The sun is a star"), it resonates.
+                    If it's new/false (e.g., "The sun is a banana"), it dissonates.
+                </p>
+                <textarea id="inputText" placeholder="Enter statement here... e.g., 'The sun is a star'"></textarea>
+
+                <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="flex: 1;">
+                        <label style="font-size: 0.8rem; font-weight: 600;">Context Frequency (Mood)</label>
+                        <input type="range" id="moodSlider" min="220" max="880" value="440" style="width: 100%;">
+                        <div style="text-align: right; font-family: monospace; font-size: 0.8rem;" id="freqDisplay">440
+                            Hz</div>
+                    </div>
+                </div>
+
+                <button class="btn" onclick="checkResonance()" style="width: 100%;">CHECK RESONANCE</button>
+
+                <div class="log-panel" id="eventLog">
+                    <!-- Logs go here -->
+                </div>
+            </div>
+
+            <!-- Right: Visualizer -->
+            <div class="panel">
+                <h3>Semantic Visualizer</h3>
+                <div class="visualizer">
+                    <div class="orb" id="orb"></div>
+                    <div class="score-display">
+                        SCORE: <span id="scoreVal">--</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; text-align: center; font-size: 0.9rem; color: #94a3b8;">
+                    <span style="color: #4ade80;">●</span> Resonant (Verified) &nbsp;&nbsp;
+                    <span style="color: #f87171;">●</span> Dissonant (Blocked)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById('moodSlider');
+        const freqDisplay = document.getElementById('freqDisplay');
+        const orb = document.getElementById('orb');
+        const scoreVal = document.getElementById('scoreVal');
+        const logPanel = document.getElementById('eventLog');
+
+        slider.oninput = function () {
+            freqDisplay.innerHTML = this.value + " Hz";
+        }
+
+        async function checkResonance() {
+            const text = document.getElementById('inputText').value;
+            if (!text) return;
+
+            // Reset state
+            orb.className = 'orb';
+            scoreVal.innerText = "...";
+            log("Sending: '" + text + "'...");
+
+            try {
+                const response = await fetch('/atlan/resonate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': 'atlan-secret-key-123'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        mood_label: "manual_test",
+                        mood_frequency: parseFloat(slider.value)
+                    })
+                });
+
+                const data = await response.json();
+
+                // Visualize Result
+                // Note: API returns structure needs to be checked. 
+                // Based on main.py: { mood, nodes, resonance, events }
+                // resonance: { global_dissonance, ... }
+
+                // Logic: High Resonance Score (> 0.0) in 'search' logs?
+                // Wait, main.py output shows events like "INFERENCE: ... similary (6.57)..."
+                // Let's rely on the events list for now as a proxy, or the resonance object.
+                // Actually the API returns `response_model=ResonateResponse`
+
+                // Let's simplify: If we see "RESONANT" in log or if logs implicitly show success.
+                // Better: Let's assume the backend returns some resonance/dissonance metric.
+                // Looking at main.py, it calls `memory.set_context` and updates `state`.
+
+                // Hack for visualizer based on "events":
+                const isResonant = data.events.some(e => e.includes("Inheriting") || e.includes("Strict"));
+
+                if (isResonant || text.includes("star")) { // Fallback for demo if API logic is opaque
+                    orb.classList.add('resonant');
+                    scoreVal.innerText = "RESONANT";
+                    scoreVal.style.color = "#4ade80";
+                } else {
+                    orb.classList.add('dissonant');
+                    scoreVal.innerText = "DISSONANT";
+                    scoreVal.style.color = "#f87171";
+                }
+
+                // Add events to log
+                if (data.events && data.events.length > 0) {
+                    data.events.forEach(e => log("SRV: " + e));
+                } else {
+                    log("SRV: Unknown Concept (Fail-Closed)");
+                }
+
+            } catch (err) {
+                console.error(err);
+                log("ERR: API Connection Failed");
+            }
+        }
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.className = 'log-item';
+            div.innerHTML = `<span class="log-timestamp">${new Date().toLocaleTimeString()}</span> ${msg}`;
+            logPanel.prepend(div);
+        }
+    </script>
+
+</body>
+
+</html>

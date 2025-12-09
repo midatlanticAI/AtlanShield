@@ -1,0 +1,264 @@
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlan | Cognitive Observability</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Dashboard specific overrides */
+        .grid {
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <div class="logo"><img src="images/logo.png" alt="Mid-Atlantic AI"></div>
+        <div class="nav-links">
+            <a href="/">Product</a>
+            <a href="/static/whitepaper.html">Whitepaper</a>
+            <a href="/static/demo.html">Interactive Demo</a>
+            <a href="/static/dashboard.html" class="active">Dashboard</a>
+            <a href="/static/guardrail.html">Guardrail</a>
+        </div>
+        <a href="/static/demo.html" class="btn">Try Analysis</a>
+    </nav>
+
+    <div class="container">
+        <div class="header"
+            style="border-bottom: 1px solid var(--glass-border); padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: center;">
+            <div class="brand">
+                <div>
+                    <h1>SYSTEM STATUS</h1>
+                    <div style="font-size: 12px; color: #94a3b8; letter-spacing: 2px;">REAL-TIME METRICS</div>
+                </div>
+            </div>
+            <div id="systemStatus" class="status-pill">
+                <div class="indicator"></div>
+                <span>SYSTEM STABLE</span>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Metrics -->
+            <div class="card col-span-3">
+                <div class="card-header">
+                    <div class="card-title">Truth Drift</div>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-cyan)">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                </div>
+                <div id="driftValue" class="metric-big">0.000</div>
+                <div class="metric-sub">Deviation Index</div>
+            </div>
+
+            <div class="card col-span-3">
+                <div class="card-header">
+                    <div class="card-title">Global Dissonance</div>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" style="color: var(--danger)">
+                        <path
+                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
+                        </path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <div id="dissonanceValue" class="metric-big">0.000</div>
+                <div class="metric-sub">Conflict Magnitude</div>
+            </div>
+
+            <div class="card col-span-6">
+                <div class="card-header">
+                    <div class="card-title">System Health</div>
+                </div>
+                <div style="display: flex; gap: 20px; align-items: center; height: 100%;">
+                    <div style="flex: 1; height: 8px; background: #334155; border-radius: 4px; overflow: hidden;">
+                        <div id="healthBar"
+                            style="width: 98%; height: 100%; background: var(--success); box-shadow: 0 0 10px var(--success);">
+                        </div>
+                    </div>
+                    <div style="font-family: 'JetBrains Mono'; font-weight: 700;">98%</div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="card col-span-8">
+                <div class="card-header">
+                    <div class="card-title">Real-time Drift Analysis</div>
+                </div>
+                <div style="position: relative; height: 300px; width: 100%;">
+                    <canvas id="driftChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card col-span-4">
+                <div class="card-header">
+                    <div class="card-title">Cognitive Hotspots</div>
+                </div>
+                <div style="position: relative; height: 300px; width: 100%;">
+                    <canvas id="heatmapChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = "atlan-secret-key-123";
+        const BASE_URL = "http://localhost:8000";
+
+        // Setup Charts
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'JetBrains Mono', monospace";
+
+        let driftChart, heatmapChart;
+        const driftHistory = [];
+        const labels = [];
+
+        function initCharts() {
+            // Drift Chart
+            const ctxDrift = document.getElementById('driftChart').getContext('2d');
+            const gradient = ctxDrift.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(6, 182, 212, 0.5)');
+            gradient.addColorStop(1, 'rgba(6, 182, 212, 0)');
+
+            driftChart = new Chart(ctxDrift, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Truth Drift',
+                        data: driftHistory,
+                        borderColor: '#06b6d4',
+                        borderWidth: 2,
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#06b6d4',
+                        pointRadius: 0,
+                        pointHoverRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            border: { display: false }
+                        },
+                        x: {
+                            grid: { display: false },
+                            border: { display: false },
+                            ticks: { display: false }
+                        }
+                    },
+                    animation: { duration: 0 }
+                }
+            });
+
+            // Heatmap Chart
+            const ctxHeatmap = document.getElementById('heatmapChart').getContext('2d');
+            heatmapChart = new Chart(ctxHeatmap, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Dissonance',
+                        data: [],
+                        backgroundColor: '#f43f5e',
+                        borderRadius: 4,
+                        barThickness: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            max: 1.0
+                        },
+                        y: {
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function updateDashboard() {
+            try {
+                const statusRes = await fetch(`${BASE_URL}/analytics/status`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (!statusRes.ok) throw new Error("API Error");
+
+                const statusData = await statusRes.json();
+
+                // Update Metrics
+                document.getElementById('driftValue').innerText = statusData.drift.toFixed(3);
+                document.getElementById('dissonanceValue').innerText = statusData.dissonance.toFixed(3);
+
+                const statusEl = document.getElementById('systemStatus');
+                const healthBar = document.getElementById('healthBar');
+
+                if (statusData.status === "Stable") {
+                    statusEl.className = "status-pill";
+                    statusEl.innerHTML = '<div class="indicator"></div><span>SYSTEM STABLE</span>';
+                    healthBar.style.background = "var(--success)";
+                    healthBar.style.boxShadow = "0 0 10px var(--success)";
+                } else {
+                    statusEl.className = "status-pill unstable";
+                    statusEl.innerHTML = '<div class="indicator"></div><span>SYSTEM UNSTABLE</span>';
+                    healthBar.style.background = "var(--danger)";
+                    healthBar.style.boxShadow = "0 0 10px var(--danger)";
+                }
+
+                // Charts
+                const now = new Date().toLocaleTimeString();
+                labels.push(now);
+                driftHistory.push(statusData.drift);
+
+                if (labels.length > 30) {
+                    labels.shift();
+                    driftHistory.shift();
+                }
+
+                driftChart.update();
+
+                // Heatmap
+                const heatmapRes = await fetch(`${BASE_URL}/analytics/heatmap`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const heatmapData = await heatmapRes.json();
+
+                heatmapChart.data.labels = heatmapData.hotspots.map(d => d.phrase);
+                heatmapChart.data.datasets[0].data = heatmapData.hotspots.map(d => d.dissonance);
+                heatmapChart.update();
+
+            } catch (e) {
+                console.error("Update failed", e);
+                document.getElementById('systemStatus').innerHTML = '<div class="indicator" style="background:red"></div><span>OFFLINE</span>';
+            }
+        }
+
+        initCharts();
+        setInterval(updateDashboard, 1000);
+        updateDashboard();
+    </script>
+</body>
+
+</html>

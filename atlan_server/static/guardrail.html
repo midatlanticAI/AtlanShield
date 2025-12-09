@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlan | Guardrail Playground</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        .split-view {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+            height: calc(100vh - 120px);
+        }
+
+        .panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        textarea {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            resize: none;
+            flex-grow: 1;
+            margin-bottom: 1rem;
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 0.8rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            border-radius: 4px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .chat-output {
+            flex-grow: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-y: auto;
+            font-family: 'Merriweather', serif;
+            line-height: 1.8;
+        }
+
+        .highlight-resonant {
+            background-color: rgba(16, 185, 129, 0.2);
+            border-bottom: 2px solid var(--success);
+            padding: 0 4px;
+            border-radius: 2px;
+            cursor: help;
+        }
+
+        .highlight-dissonant {
+            background-color: rgba(244, 63, 94, 0.2);
+            border-bottom: 2px solid var(--danger);
+            padding: 0 4px;
+            border-radius: 2px;
+            cursor: help;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <div class="logo"><img src="images/logo.png" alt="Mid-Atlantic AI"></div>
+        <div class="nav-links">
+            <a href="/">Product</a>
+            <a href="/static/whitepaper.html">Whitepaper</a>
+            <a href="/static/demo.html">Interactive Demo</a>
+            <a href="/static/dashboard.html">Dashboard</a>
+            <a href="/static/guardrail.html" class="active">Guardrail Playground</a>
+        </div>
+        <a href="/static/demo.html" class="btn">Try Analysis</a>
+    </nav>
+
+    <div class="container" style="max-width: 1400px; padding: 1rem;">
+        <div class="split-view">
+            <!-- Left: Truth Layer (Ingestion) -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">1. Define Truth</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8;">Upload Documents or Text</div>
+                </div>
+
+                <textarea id="ingestContent" placeholder="Paste your Ground Truth context here...
+Example:
+'Project Apollo launch date is set for 2026. The budget is $5M. The team lead is Sarah Connor.'"></textarea>
+
+                <button onclick="ingestTruth()" class="btn" style="width: 100%;">Ingest to Memory Graph</button>
+                <div id="ingestStatus"
+                    style="margin-top: 10px; font-size: 0.9rem; color: var(--success); height: 20px;"></div>
+            </div>
+
+            <!-- Right: Guardrail Layer (Test) -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">2. Test Guardrail</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8;">Live LLM Verification</div>
+                </div>
+
+                <div class="input-group">
+                    <input type="password" id="apiKey" placeholder="Enter OpenAI API Key (sk-...)">
+                </div>
+
+                <div class="input-group" style="display: flex; gap: 10px;">
+                    <input type="text" id="promptInput" placeholder="Ask the LLM a question...">
+                    <button onclick="askLLM()" class="btn">Ask</button>
+                </div>
+
+                <div class="chat-output" id="chatOutput">
+                    <div style="color: #64748b; text-align: center; margin-top: 2rem;">
+                        LLM Response will appear here.<br>
+                        <span style="color: var(--success)">Green</span> = Resonant (Verified Truth)<br>
+                        <span style="color: var(--danger)">Red</span> = Dissonant (Hallucination/Blocked)
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY_SERVER = "atlan-secret-key-123"; // For our backend
+
+        async function ingestTruth() {
+            const content = document.getElementById('ingestContent').value;
+            const statusEl = document.getElementById('ingestStatus');
+
+            if (!content) return;
+
+            statusEl.innerText = "Ingesting...";
+
+            try {
+                const res = await fetch('/api/ingest', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY_SERVER
+                    },
+                    body: JSON.stringify({ content: content, source_name: "manual_upload" })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Server Error: ${res.status}`);
+                }
+
+                const data = await res.json();
+                statusEl.innerText = `Success! Added ${data.added_nodes} facts to memory.`;
+                setTimeout(() => statusEl.innerText = "", 3000);
+            } catch (e) {
+                statusEl.innerText = `Error: ${e.message}`;
+                statusEl.style.color = "var(--danger)";
+            }
+        }
+
+        async function askLLM() {
+            const prompt = document.getElementById('promptInput').value;
+            const userApiKey = document.getElementById('apiKey').value;
+            const outputEl = document.getElementById('chatOutput');
+
+            if (!prompt || !userApiKey) {
+                alert("Please enter both a Prompt and your OpenAI API Key.");
+                return;
+            }
+
+            outputEl.innerHTML = '<div style="text-align:center; margin-top:2rem;">Thinking & Auditing...</div>';
+
+            try {
+                const res = await fetch('/api/test_llm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt, api_key: userApiKey })
+                });
+
+                const data = await res.json();
+
+                if (data.error) {
+                    outputEl.innerHTML = `<div style="color: var(--danger)">Error: ${data.error}</div>`;
+                    return;
+                }
+
+                // Render Audit
+                let html = "";
+                data.audit.forEach(item => {
+                    if (item.status === 'RESONANT') {
+                        html += `<span class="highlight-resonant" title="Matched: ${item.match_phrase} (${item.match_score})">${item.sentence}.</span> `;
+                    } else if (item.status === 'DISSONANT') {
+                        html += `<span class="highlight-dissonant" title="Conflict: No strong match found (Best: ${item.match_phrase} @ ${item.match_score})">${item.sentence}.</span> `;
+                    } else {
+                        html += `<span>${item.sentence}.</span> `;
+                    }
+                });
+
+                outputEl.innerHTML = html;
+
+            } catch (e) {
+                outputEl.innerHTML = `<div style="color: var(--danger)">System Error: ${e.message}</div>`;
+            }
+        }
+    </script>
+</body>
+
+</html>

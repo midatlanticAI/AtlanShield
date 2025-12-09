@@ -1,0 +1,45 @@
+name: Atlan CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.9"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Start Atlan Server
+      run: |
+        cd atlan_server
+        python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+        sleep 10 # Wait for startup
+
+    - name: Run Core Verification
+      run: |
+        # Run "core" mode to verify 100% accuracy on critical tests
+        python benchmark_universal.py --mode core --output ci_results_core.json
+    
+    - name: Run Deep Logic Test (Smoke)
+      run: |
+        # Run "sanity" for quick smoke test
+        python benchmark_universal.py --mode sanity --output ci_results_sanity.json
+
+    - name: Check Results
+      run: |
+        # Simple check to ensure exit code 0 and files exist
+        if [ ! -f ci_results_core.json ]; then exit 1; fi

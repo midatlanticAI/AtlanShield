@@ -1,0 +1,23 @@
+# ATLAN - LLM Guardrail System
+# Core Dependencies
+
+# Web Framework
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# HTTP Client
+requests>=2.28.0
+
+# System Monitoring
+psutil>=5.9.0
+
+# Optional: JWT Authentication (recommended for production)
+PyJWT>=2.8.0
+
+# Optional: For running benchmarks against LLM-based guardrails
+# litellm>=1.0.0  # Uncomment if you want to run head-to-head benchmarks
