@@ -327,3 +327,6 @@ def main():
         json.dump(output_data, f, indent=2)
         
     print(f"Results saved to {args.output}")
+
+if __name__ == "__main__":
+    main()
