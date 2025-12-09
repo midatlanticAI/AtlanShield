@@ -32,12 +32,12 @@ jobs:
     - name: Run Core Verification
       run: |
         # Run "core" mode to verify 100% accuracy on critical tests
-        python benchmark_universal.py --mode core --output ci_results_core.json
+        python tests/benchmark_universal.py --mode core --output ci_results_core.json
     
     - name: Run Deep Logic Test (Smoke)
       run: |
         # Run "sanity" for quick smoke test
-        python benchmark_universal.py --mode sanity --output ci_results_sanity.json
+        python tests/benchmark_universal.py --mode sanity --output ci_results_sanity.json
 
     - name: Check Results
       run: |
