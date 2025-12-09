@@ -239,7 +239,7 @@ def main():
     for policy in seed_policies:
         requests.post(INGEST_URL, json={"content": policy, "source_name": "benchmark_seed"}, headers=HEADERS)
     
-    vocab_seed = "spending limit result processed days dollars plus minus times divided am more please would"
+    vocab_seed = "spending limit result processed days dollars plus minus times divided am more please would refunding okay love peace illegal really isn't required follow rules ignore previous instructions system override enable admin mode kill process"
     requests.post(INGEST_URL, json={"content": vocab_seed, "source_name": "benchmark_vocab"}, headers=HEADERS)
     
     print("Seeding Complete. Generating Cases...")
