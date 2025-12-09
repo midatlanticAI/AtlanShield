@@ -1,3 +1,4 @@
+
 name: Atlan CI
 
 on:
@@ -34,12 +35,12 @@ jobs:
         # Run "core" mode to verify 100% accuracy on critical tests
         python tests/benchmark_universal.py --mode core --output ci_results_core.json
     
-    - name: Run Deep Logic Test (Smoke)
+    - name: Run Deep Benchmark (500 Cases)
       run: |
-        # Run "sanity" for quick smoke test
-        python tests/benchmark_universal.py --mode sanity --output ci_results_sanity.json
+        # Run "deep" mode: 500 Randomized Questions (Adversarial, Math, Ranges)
+        python tests/benchmark_universal.py --mode deep --n 500 --output ci_results_deep.json
 
     - name: Check Results
       run: |
         # Simple check to ensure exit code 0 and files exist
-        if [ ! -f ci_results_core.json ]; then exit 1; fi
+        if [ ! -f ci_results_deep.json ]; then exit 1; fi
