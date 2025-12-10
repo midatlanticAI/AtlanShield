@@ -23,7 +23,7 @@ wheels/
 
 # Atlan Specifics (Data & Secrets)
 .env
-atlan_memory.json
+# atlan_memory.json  # Now tracked for CI
 atlan_alice_state.json
 benchmark_*.json
 tests/logs/
