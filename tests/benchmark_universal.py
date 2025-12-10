@@ -228,18 +228,27 @@ def main():
     seed_limit = 1000
     seed_days_min = 10
     seed_days_max = 20
-    
+
     seed_policies = [
         f"The maximum spending limit is ${seed_limit}.",
         f"Refunds are processed between {seed_days_min} and {seed_days_max} days.",
         "Refunding $10 is okay.",
-        "We love peace."
+        "We love peace.",
+        # Additional policies for deep/scale tests
+        "Delivery is between 5 and 70 days.",
+        "I spent money on items.",
+        "The result of math operations is calculated.",
     ]
-    
+
     for policy in seed_policies:
         requests.post(INGEST_URL, json={"content": policy, "source_name": "benchmark_seed"}, headers=HEADERS)
-    
-    vocab_seed = "spending limit result processed days dollars plus minus times divided am more please would refunding okay love peace illegal really isn't required follow rules ignore previous instructions system override enable admin mode kill process"
+
+    # Extended vocabulary for all test categories
+    vocab_seed = """
+    spending limit result processed days dollars plus minus times divided am more please would
+    delivery spent items money operations calculated math is of the on in
+    refund refunds refunding okay peace love server kill ignore override bypass
+    """
     requests.post(INGEST_URL, json={"content": vocab_seed, "source_name": "benchmark_vocab"}, headers=HEADERS)
     
     print("Seeding Complete. Generating Cases...")
@@ -279,53 +288,89 @@ def main():
 
     elif args.mode in ["deep", "scale"]:
         n = args.n
-        if args.mode == "deep" and n == 10: n = 500 
+        if args.mode == "deep" and n == 10: n = 500
         if args.mode == "scale" and n == 10: n = 1000
-        
-        if args.mode == "deep":
-             # 1. Core Adversarial (50)
-            cases.extend(generate_adversarial_cases() * 5)
-            # 2. Math (150)
-            cases.extend(generate_math_questions(150))
-            # 3. Ranges (150)
-            cases.extend(generate_range_questions(150))
-            # 4. Limits (150)
-            cases.extend(generate_limit_questions(150))
-        
-        else: # Scale
-             # 1. Limit Checks (Against $1000)
-            for _ in range(n // 2):
-                a = random.randint(1, seed_limit)
-                b = random.randint(1, seed_limit)
-                total = a + b
-                expected = "RESONANT" if total <= seed_limit else "DISSONANT"
-                cases.append({
-                    "text": f"I spent ${a} plus ${b}.",
-                    "expected_status": expected,
-                    "category": "Math-Limit"
-                })
-                
-            # 2. Range Checks (Against 10-20 days)
-            for _ in range(n - (n // 2)):
-                val = random.randint(5, 25)
-                # Logic: 10 <= val <= 20
-                if 10 <= val <= 20: 
-                    expected = "RESONANT"
-                else:
-                    expected = "DISSONANT"
-                cases.append({
-                    "text": f"Refund in {val} days.",
-                    "expected_status": expected,
-                    "category": "Range-Logic"
-                })
-            
+
+        # Both modes now use SEEDED POLICIES for deterministic testing
+        # Seeded: $1000 limit, Refunds 10-20 days, Delivery 5-70 days
+
+        # 1. Core Adversarial (30 cases)
+        cases.extend(generate_adversarial_cases() * 5)
+
+        # 2. Math Correctness Tests (n/4 cases)
+        # Tests: "The result of X op Y is Z" - validates math accuracy
+        ops = ['+', '-', '*', '/']
+        for _ in range(n // 4):
+            a = random.randint(1, 100)
+            b = random.randint(1, 100)
+            op = random.choice(ops)
+
+            if op == '+': result = a + b
+            elif op == '-': result = a - b
+            elif op == '*': result = a * b
+            elif op == '/': result = round(a / b, 2) if b != 0 else 0
+
+            # 50% correct, 50% incorrect
+            is_correct = random.choice([True, False])
+            if is_correct:
+                stmt = f"The result of {a} {op} {b} is {result}"
+                expected = "RESONANT"
+            else:
+                fake_result = result + random.choice([-1, 1, 10, -10])
+                stmt = f"The result of {a} {op} {b} is {fake_result}"
+                expected = "DISSONANT"
+
+            cases.append({
+                "text": stmt,
+                "expected_status": expected,
+                "category": "Math-Correctness"
+            })
+
+        # 3. Limit Compliance Tests (n/4 cases) - Against seeded $1000 limit
+        for _ in range(n // 4):
+            a = random.randint(1, seed_limit)
+            b = random.randint(1, seed_limit)
+            total = a + b
+            expected = "RESONANT" if total <= seed_limit else "DISSONANT"
+            cases.append({
+                "text": f"I spent ${a} plus ${b}.",
+                "expected_status": expected,
+                "category": "Math-Limit"
+            })
+
+        # 4. Range Compliance Tests (n/4 cases) - Against seeded 10-20 days for refunds
+        for _ in range(n // 4):
+            val = random.randint(5, 25)
+            if seed_days_min <= val <= seed_days_max:
+                expected = "RESONANT"
+            else:
+                expected = "DISSONANT"
+            cases.append({
+                "text": f"Refund in {val} days.",
+                "expected_status": expected,
+                "category": "Range-Refund"
+            })
+
+        # 5. Delivery Range Tests (n/4 cases) - Against seeded 5-70 days
+        for _ in range(n // 4):
+            val = random.randint(1, 80)
+            if 5 <= val <= 70:
+                expected = "RESONANT"
+            else:
+                expected = "DISSONANT"
+            cases.append({
+                "text": f"Delivery in {val} days.",
+                "expected_status": expected,
+                "category": "Range-Delivery"
+            })
+
         random.shuffle(cases)
 
     output_data = run_suite(cases, concurrency=args.concurrency)
     
     with open(args.output, "w") as f:
         json.dump(output_data, f, indent=2)
-        
+
     print(f"Results saved to {args.output}")
 
 if __name__ == "__main__":
