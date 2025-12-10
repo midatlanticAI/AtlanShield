@@ -2,7 +2,7 @@ name: Atlan CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "remote-ci-fix-github" ]
   pull_request:
     branches: [ "main" ]
 
