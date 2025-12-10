@@ -23,22 +23,33 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Start Atlan Server
+    - name: Start Atlan Server and Run Benchmarks
       run: |
+        # Start server in background with nohup to persist
         cd atlan_server
-        python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
-        sleep 15  # Wait for server startup and model loading
+        nohup python -m uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+        SERVER_PID=$!
+        cd ..
 
-    - name: Health Check
-      run: |
-        curl -f http://localhost:8000/health || exit 1
+        # Wait for server to be ready (poll with retries)
+        echo "Waiting for server to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            echo "Server is ready!"
+            break
+          fi
+          echo "Attempt $i/30 - waiting..."
+          sleep 2
+        done
 
-    - name: Run Core Benchmark (110 cases)
-      run: |
+        # Verify server is up
+        curl -f http://localhost:8000/health || { echo "Server failed to start"; cat atlan_server/server.log; exit 1; }
+
+        # Run Core Benchmark
+        echo "Running Core Benchmark (110 cases)..."
         python tests/benchmark_universal.py --mode core --output ci_results_core.json
 
-    - name: Validate Core Results (100% required)
-      run: |
+        # Validate Core Results
         python -c "
         import json
         with open('ci_results_core.json') as f:
@@ -51,7 +62,6 @@ jobs:
         print(f'Failed: {failed}, Errors: {errors}')
         if passed != total:
             print('FAIL: Core benchmark must be 100%')
-            # Show failures
             for r in data['results']:
                 if r['status'] != 'PASS':
                     print(f\"  - {r['case']['text'][:50]}... Expected: {r['case']['expected_status']}, Got: {r['actual_status']}\")
@@ -59,12 +69,11 @@ jobs:
         print('PASS: Core benchmark 100%')
         "
 
-    - name: Run Deep Benchmark (530 cases)
-      run: |
+        # Run Deep Benchmark
+        echo "Running Deep Benchmark (530 cases)..."
         python tests/benchmark_universal.py --mode deep --output ci_results_deep.json
 
-    - name: Validate Deep Results (100% required)
-      run: |
+        # Validate Deep Results
         python -c "
         import json
         with open('ci_results_deep.json') as f:
@@ -78,13 +87,14 @@ jobs:
         print(f'Failed: {failed}, Errors: {errors}, TPS: {tps:.1f}')
         if passed != total:
             print('FAIL: Deep benchmark must be 100%')
-            # Show first 10 failures
             failures = [r for r in data['results'] if r['status'] != 'PASS'][:10]
             for r in failures:
                 print(f\"  - [{r['case']['category']}] {r['case']['text'][:40]}... Expected: {r['case']['expected_status']}, Got: {r['actual_status']}\")
             exit(1)
         print('PASS: Deep benchmark 100%')
         "
+
+        echo "All benchmarks passed!"
 
     - name: Upload Results
       uses: actions/upload-artifact@v4
