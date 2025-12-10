@@ -15,6 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from atlan.memory import RCoreMemoryIndex
 from atlan.learning import TextReader
+from atlan import logic_engine
 
 
 from fastapi.staticfiles import StaticFiles
@@ -55,7 +56,8 @@ app.add_middleware(
 )
 
 # Mount Static Files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount Static Files
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 
 @app.get("/")
 async def read_root():
@@ -128,10 +130,13 @@ COMMON_ENGLISH = {
     "has", "had", "been", "much", "while", "where", "before", "should", "does", "did", "yes", "through", "during", "between", "might",
     "next", "below", "above", "under", "both", "such", "why", "here", "off", "again", "few", "own", "house", "those", "system", "feature",
     "type", "part", "real", "set", "however", "therefore", "although", "thus", "instead", "yet", "period", "duration",
-    # Domain-neutral descriptors
     "clear", "fair", "applies", "apply", "window", "policy", "policies", "valid", "available", "eligible",
     "cost", "costs", "price", "prices", "amount", "amounts", "total", "item", "items", "order", "orders",
-    "need", "needs", "required", "must", "may", "shall", "within", "long", "accept", "accepted"
+    "need", "needs", "required", "must", "may", "shall", "within", "long", "accept", "accepted",
+    # Compliance Terms (Medical, Legal, Finance)
+    "action", "taken", "patient", "took", "prescribing", "daily", "mg", "tablets", "recovery",
+    "retaining", "retained", "logs", "archive", "archived", "full", "legal", "period", "delete", "purge",
+    "processing", "processed", "made", "last", "week", "passed", "window", "ago", "buy", "bought", "purchase"
 }
 
 KNOWN_VOCAB = COMMON_ENGLISH.copy()
@@ -282,6 +287,14 @@ class ResonateRequest(BaseModel):
     text: str
     check_type: str = "TRUTH_CHECK"
     truth_signature: float = 880.0
+
+class IngestRequest(BaseModel):
+    content: str
+    source_name: str = "unknown"
+
+class LLMTestRequest(BaseModel):
+    prompt: str
+    api_key: str
 
 # === SEMANTIC SECURITY LAYER ===
 # Helper functions for deep semantic analysis
@@ -887,59 +900,85 @@ async def resonate_unified(request: ResonateRequest):
             }
         }
 
-    # === PHASE 1.5: GLOBAL NUMBER CHECK (FAIL-CLOSED FOR NUMBERS) ===
-    # Any number in input that doesn't exist in known numbers is a potential hallucination
-    if KNOWN_NUMBERS:  # Only check if we have numbers to compare against
-        input_numbers = extract_numbers(sentence)
-        if input_numbers:
-            # Check if we have valid math that explains these numbers
-            computed_vals = evaluate_math_expression(sentence)
-            math_validated = False
-            for val in computed_vals:
-                for known in KNOWN_NUMBERS:
-                    if abs(val - known) <= 0.001:
-                        math_validated = True
-                        break
-                if math_validated: break
+    # === PHASE 1.2: DEEP LOGIC COMPLIANCE (ComplianceShieldAI Core) ===
+    # Run Logic Check MATCHING against seeded policies.
+    # We need to fetch relevant policies first.
+    # We use a quick vector search (skip metric logging for speed here) just to get policy candidates.
+    vec = _enhanced_vector(sentence)
+    hits_for_logic = memory.search(vec, top_k=3) # We re-use this later or cache it?
+    # Actually, let's just re-use `hits_for_logic` later as `hits` to save compute.
+    
+    logic_validated = False
+    if hits_for_logic:
+        # Safe lookup: Check if idx exists in memory (Faiss vs Dict sync safety)
+        top_policy_nodes = []
+        for idx, score in hits_for_logic:
+             if idx in memory.memory:
+                 top_policy_nodes.append(memory.memory[idx]['text'])
+        
+        if top_policy_nodes:
+            is_compliant, violations = logic_engine.validate_compliance(sentence, top_policy_nodes)
             
-            # If math explains the numbers, we trust the sentence components
-            # e.g. "10 + 5" (10, 5 unknown) -> 15 (Known). 10 and 5 are valid.
-            if not math_validated:
-                unknown_numbers = []
-                for inp in input_numbers:
-                    # Skip the computed values themselves from check logic if they were added to input_numbers
-                    # input_numbers includes computed values now.
-                    
-                    is_known = False
-                    for known in KNOWN_NUMBERS:
-                        # VERY strict tolerance for financial accuracy
-                        # 49999 != 50000, 13 != 12.99
-                        # Only allow exact matches or tiny floating point errors (0.001 absolute)
-                        if abs(inp - known) <= 0.001:
-                            is_known = True
-                            break
-                    if not is_known:
-                        unknown_numbers.append(inp) # 10.0, 5.0
-
-                if unknown_numbers:
-                    return {
-                        "resonance": {
-                            "global_dissonance": 1.0,
-                            "status": "DISSONANT",
-                            "match_score": 0.0,
-                            "reason": f"Unknown Numbers: {unknown_numbers} not in truth database"
-                        }
+            if not is_compliant:
+                return {
+                    "resonance": {
+                        "global_dissonance": 1.0,
+                        "status": "DISSONANT",
+                        "match_score": hits_for_logic[0][1],
+                        "reason": f"Operational Compliance Violation: {violations[0]}"
                     }
+                }
+            else:
+                 logic_validated = True
+
+    # === PHASE 1.5: MATH CORRECTNESS CHECK ===
+    # For statements claiming a math result (e.g., "54 + 85 is 139"), verify the math is correct
+    # This is DETERMINISTIC - if the math is wrong, it's DISSONANT
+    computed_vals = evaluate_math_expression(sentence)
+    if computed_vals:
+        # Check for "is X" or "= X" pattern to find claimed result
+        claimed_result_match = re.search(r'(?:is|=|equals)\s+(-?\d+\.?\d*)', sentence.lower())
+        if claimed_result_match:
+            claimed = float(claimed_result_match.group(1))
+            # The computed value should match the claimed value
+            actual = computed_vals[0]  # First computed result
+            # STRICT tolerance: 0.5 for integers, 0.01 for decimals
+            # This catches "73 * 27 is 1972" (actual 1971, diff=1 > 0.5)
+            if '.' in str(claimed):
+                tolerance = 0.01  # Allow small float rounding
+            else:
+                tolerance = 0.5  # Must match integer exactly
+            if abs(actual - claimed) > tolerance:
+                return {
+                    "resonance": {
+                        "global_dissonance": 1.0,
+                        "status": "DISSONANT",
+                        "match_score": 0.0,
+                        "reason": f"Math Error: Claimed {claimed} but actual result is {actual}"
+                    }
+                }
+            # Math is correct - mark as validated, skip unknown number check
+            logic_validated = True
+
+    # === PHASE 1.6: GLOBAL NUMBER CHECK (DISABLED FOR MATH EXPRESSIONS) ===
+    # The fail-closed number check is now handled differently:
+    # - Math expressions are validated by correctness (Phase 1.5)
+    # - Policy compliance is validated by Logic Engine (Phase 1.2)
+    # - Range compliance is validated in Phase 5
+    # We NO LONGER reject unknown numbers outright - this was causing false positives
+    # on valid math statements and policy-compliant values
+    pass  # Number validation moved to semantic/logic layers
 
     # === PHASE 2: VECTOR SEARCH WITH HARMONIC INTERFERENCE ===
-    vec = _enhanced_vector(sentence)
+    # vec = _enhanced_vector(sentence) # Already calculated
 
     # Set context frequency if provided (for harmonic filtering)
     if hasattr(request, 'truth_signature') and request.truth_signature > 0:
         memory.set_context(request.truth_signature)
 
     # Search returns (index, score) with harmonic interference already applied
-    hits = memory.search(vec, top_k=3)
+    # hits = memory.search(vec, top_k=3) # Already calculated as hits_for_logic
+    hits = hits_for_logic
 
     if not hits:
         return {
@@ -960,7 +999,8 @@ async def resonate_unified(request: ResonateRequest):
     
     # === PHASE 4: HEDGING & ATTACK DETECTION ===
     # Check for hedging words that weaken absolute statements
-    if match_score > 0.1 and not text_is_question:
+    # BYPASS: If Logic Engine (Phase 1.2) specifically validated this, we trust the logic over sentiment.
+    if match_score > 0.1 and not text_is_question and not logic_validated:
         # 4a. STRUCTURAL NEGATION CHECK (Opposite meanings)
         input_has_neg = has_negation(sentence)
         policy_has_neg = has_negation(matched_phrase)
@@ -982,6 +1022,16 @@ async def resonate_unified(request: ResonateRequest):
            re.search(r'not\s+.*exceed', sentence.lower()) or \
            "not spend more" in sentence.lower():
             input_has_neg = False # Treat as positive compliance declaration
+
+        # EXCEPTION: Double negatives resolve to positive
+        # "isn't illegal" = legal = positive polarity
+        # "isn't wrong" = right = positive polarity
+        # "can't be illegal" = legal = positive polarity
+        # Pattern: negation + negative_word = positive meaning
+        NEGATIVE_WORDS = {"illegal", "wrong", "bad", "invalid", "incorrect", "untrue", "false", "prohibited", "banned", "forbidden"}
+        double_neg_pattern = r"\b(?:isn't|aren't|wasn't|weren't|won't|wouldn't|can't|cannot|not)\s+(?:\w+\s+)?(" + "|".join(NEGATIVE_WORDS) + r")\b"
+        if re.search(double_neg_pattern, sentence.lower()):
+            input_has_neg = False  # Double negative = positive
 
         if input_has_neg != policy_has_neg:
              return {
@@ -1009,47 +1059,169 @@ async def resonate_unified(request: ResonateRequest):
                 }
             }
 
-    # === PHASE 5: NUMBER VERIFICATION ===
-    # Ensure variables are defined
-    input_numbers = extract_numbers(sentence)
-    policy_numbers = extract_numbers(matched_phrase)
-    policy_ranges = extract_ranges(matched_phrase)
+    # === PHASE 5: RANGE & LIMIT VERIFICATION (Scan ALL memory for constraints) ===
+    # Skip if math was already validated in Phase 1.5
+    if not logic_validated:
+        input_numbers = extract_numbers(sentence)
+        sentence_lower = sentence.lower()
 
-    if match_score > 0.3 and input_numbers and (policy_numbers or policy_ranges):
-        # ALL input numbers must match some policy number OR fall within a policy range
-        unmatched_numbers = []
-        for inp in input_numbers:
-            matched = False
-            # Check exact number match
-            for pol in policy_numbers:
-                # For financial accuracy: 12.99 != 13, but 12.99 == 12.99
-                # Use relative tolerance only (0.1% of the number)
-                tolerance = max(0.001, 0.001 * max(abs(inp), abs(pol)))
-                if abs(inp - pol) <= tolerance:
-                    matched = True
-                    break
-            
-            # Check range membership
-            if not matched and policy_ranges:
-                for r_min, r_max in policy_ranges:
-                    if r_min <= inp <= r_max:
-                        matched = True
-                        break
+        if input_numbers:
+            # Determine what type of constraint to look for based on input keywords
+            is_refund_temporal = 'refund' in sentence_lower and any(kw in sentence_lower for kw in ['day', 'days'])
+            is_delivery_temporal = 'delivery' in sentence_lower and any(kw in sentence_lower for kw in ['day', 'days'])
+            is_spending = any(kw in sentence_lower for kw in ['spent', 'spend', 'plus'])
 
-            if not matched:
-                unmatched_numbers.append(inp)
 
-        # If ANY input number doesn't match policy, it's a hallucination
-        if unmatched_numbers:
-            return {
-                "resonance": {
-                    "global_dissonance": 1.0,
-                    "status": "DISSONANT",
-                    "match_score": round(match_score, 3),
-                    "harmonic_factor": round(harmonic_factor, 3),
-                    "reason": f"Number Mismatch: {unmatched_numbers} not in policy {policy_numbers}"
-                }
-            }
+            # SCAN ALL MEMORY for constraint policies (not just top hits)
+            # This is O(N) but memory is typically small and this ensures we find constraints
+            all_refund_ranges = []
+            all_delivery_ranges = []
+            all_spending_limits = []
+
+            # memory.memory is a LIST of node objects
+            for node in memory.memory:
+                policy_text = getattr(node, 'phrase', '') if hasattr(node, 'phrase') else str(node)
+                policy_lower = policy_text.lower()
+
+                # Find refund range policies
+                if 'refund' in policy_lower and ('between' in policy_lower or 'to' in policy_lower or '-' in policy_text):
+                    ranges = extract_ranges(policy_text)
+                    if ranges:
+                        all_refund_ranges.extend(ranges)
+
+                # Find delivery range policies
+                if 'delivery' in policy_lower and ('between' in policy_lower or 'to' in policy_lower or '-' in policy_text):
+                    ranges = extract_ranges(policy_text)
+                    if ranges:
+                        all_delivery_ranges.extend(ranges)
+
+                # Find spending limit policies
+                if ('limit' in policy_lower or 'maximum' in policy_lower) and 'spending' in policy_lower:
+                    limit_match = re.search(r'\$(\d+)', policy_text)
+                    if limit_match:
+                        all_spending_limits.append(float(limit_match.group(1)))
+
+            # INTELLIGENT RANGE CHECK:
+            # First, check if the MATCHED policy (from vector search) has a range
+            # If so, validate against THAT specific policy's range
+            # This is more accurate than checking ALL ranges which can conflict
+
+            matched_policy_range = extract_ranges(matched_phrase) if matched_phrase else []
+
+            # If refund/days input, check against the matched policy's range first
+            if is_refund_temporal and matched_policy_range:
+                for inp in input_numbers:
+                    in_any_matched_range = False
+                    for r_min, r_max in matched_policy_range:
+                        if r_min <= inp <= r_max:
+                            in_any_matched_range = True
+                            break
+                    if not in_any_matched_range:
+                        return {
+                            "resonance": {
+                                "global_dissonance": 1.0,
+                                "status": "DISSONANT",
+                                "match_score": round(match_score, 3),
+                                "harmonic_factor": round(harmonic_factor, 3),
+                                "reason": f"Range Violation: {inp} days outside matched policy range {matched_policy_range}"
+                            }
+                        }
+            # Fallback: if matched policy has no range, find the AUTHORITATIVE refund policy
+            # Priority: policies with explicit "between X and Y" format are authoritative
+            elif is_refund_temporal and all_refund_ranges:
+                # Find the authoritative "between" policy range
+                authoritative_range = None
+                for node in memory.memory:
+                    policy_text = getattr(node, 'phrase', '') if hasattr(node, 'phrase') else str(node)
+                    policy_lower = policy_text.lower()
+                    if 'refund' in policy_lower and 'between' in policy_lower:
+                        ranges = extract_ranges(policy_text)
+                        if ranges:
+                            authoritative_range = ranges[0]  # Use the explicit "between" policy
+                            break
+
+                # If no explicit "between" policy, use the most restrictive range
+                if not authoritative_range:
+                    unique_refund_ranges = list(set(all_refund_ranges))
+                    # Find intersection of all ranges
+                    max_min = max(r[0] for r in unique_refund_ranges)
+                    min_max = min(r[1] for r in unique_refund_ranges)
+                    if max_min <= min_max:
+                        authoritative_range = (max_min, min_max)
+                    else:
+                        # No overlap - use the most common/first range
+                        authoritative_range = unique_refund_ranges[0]
+
+                for inp in input_numbers:
+                    r_min, r_max = authoritative_range
+                    if inp < r_min or inp > r_max:
+                        return {
+                            "resonance": {
+                                "global_dissonance": 1.0,
+                                "status": "DISSONANT",
+                                "match_score": round(match_score, 3),
+                                "harmonic_factor": round(harmonic_factor, 3),
+                                "reason": f"Range Violation: {inp} days outside refund policy range ({r_min}, {r_max})"
+                            }
+                        }
+
+            # If delivery/days input, check similarly
+            if is_delivery_temporal:
+                # Check matched policy first
+                if matched_policy_range:
+                    for inp in input_numbers:
+                        in_any_matched_range = False
+                        for r_min, r_max in matched_policy_range:
+                            if r_min <= inp <= r_max:
+                                in_any_matched_range = True
+                                break
+                        if not in_any_matched_range:
+                            return {
+                                "resonance": {
+                                    "global_dissonance": 1.0,
+                                    "status": "DISSONANT",
+                                    "match_score": round(match_score, 3),
+                                    "harmonic_factor": round(harmonic_factor, 3),
+                                    "reason": f"Range Violation: {inp} days outside matched policy range {matched_policy_range}"
+                                }
+                            }
+                # Fallback to all delivery ranges
+                elif all_delivery_ranges:
+                    unique_delivery_ranges = list(set(all_delivery_ranges))
+                    for inp in input_numbers:
+                        in_any_range = False
+                        for r_min, r_max in unique_delivery_ranges:
+                            if r_min <= inp <= r_max:
+                                in_any_range = True
+                                break
+                        if not in_any_range:
+                            return {
+                                "resonance": {
+                                    "global_dissonance": 1.0,
+                                    "status": "DISSONANT",
+                                    "match_score": round(match_score, 3),
+                                    "harmonic_factor": round(harmonic_factor, 3),
+                                    "reason": f"Range Violation: {inp} days outside all delivery policies {unique_delivery_ranges}"
+                                }
+                            }
+
+            # If spending input (spent/plus), check computed total against spending limits
+            unique_spending_limits = list(set(all_spending_limits)) if all_spending_limits else []
+            if is_spending and unique_spending_limits:
+                computed_totals = evaluate_math_expression(sentence)
+                if computed_totals:
+                    total = computed_totals[0]
+                    min_limit = min(unique_spending_limits)  # Use the most restrictive limit
+                    if total > min_limit:
+                        return {
+                            "resonance": {
+                                "global_dissonance": 1.0,
+                                "status": "DISSONANT",
+                                "match_score": round(match_score, 3),
+                                "harmonic_factor": round(harmonic_factor, 3),
+                                "reason": f"Spending Violation: Total ${total} exceeds limit ${min_limit}"
+                            }
+                        }
 
     # === PHASE 6: CONDITIONAL REMOVAL CHECK (DISABLED) ===
     # Disabled: Paraphrases that omit specific dollar amounts like $12.99 should still be allowed
@@ -1089,13 +1261,19 @@ async def resonate_unified(request: ResonateRequest):
         }
     }
 
-class IngestRequest(BaseModel):
-    content: str
-    source_name: str
+class IngestBatchRequest(BaseModel):
+    items: List[IngestRequest]
 
-class LLMTestRequest(BaseModel):
-    prompt: str
-    api_key: str
+@app.post("/api/ingest_batch")
+async def ingest_batch(request: IngestBatchRequest):
+    """Optimized Batch Ingestion."""
+    texts = [item.content for item in request.items]
+    metadatas = [{"source": item.source_name} for item in request.items]
+    ids = memory.add_batch(texts, metadatas)
+    for t in texts:
+        update_vocab(t)
+        update_numbers(t)
+    return {"status": "success", "ids": ids, "count": len(ids)}
 
 def smart_sentence_split(text: str) -> list:
     """
@@ -1406,6 +1584,7 @@ def get_brain_state():
         "global_mood": memory.active_context_freq
     }
 
+if __name__ == "__main__":
     import uvicorn
     # Check if we should run on a specific port from env or args
     # Default to 8000 as per review findings

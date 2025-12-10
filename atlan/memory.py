@@ -338,6 +338,41 @@ class RCoreMemoryIndex:
             
         return node_id
 
+    def add_batch(self, texts: List[str], metadatas: List[Dict] = None) -> List[int]:
+        """Adds multiple memories in batch (Optimized)."""
+        import numpy as np
+        if not texts: return []
+        
+        # 1. Vectorize all (Parallel/Batch)
+        vecs = [_enhanced_vector(t) for t in texts]
+        vec_matrix = np.array(vecs).astype('float32')
+        
+        # 2. Add to FAISS
+        current_id = self.index.ntotal if hasattr(self.index, 'ntotal') else len(self.memory)
+        # Note: Default dict index doesn't have ntotal, assuming this uses FAISS if available, 
+        # but RCoreMemoryIndex uses self.index as Dict[int, List[int]]... 
+        # Wait, RCoreMemoryIndex implementation in file is PURE PYTHON DICT?
+        # Line 273: self.index: Dict[int, List[int]] = defaultdict(list)
+        # It uses _vector_hash!
+        # It does NOT use FAISS.
+        # So batch optimization is just avoiding overhead of multiple function calls.
+        
+        ids = []
+        for i, (text, vec) in enumerate(zip(texts, vecs)):
+            idx = len(self.memory)
+            meta = metadatas[i] if metadatas and i < len(metadatas) else {}
+            node = SymbolicNode(text, None) # Default params
+            node.vector = vec
+            node.metadata = meta
+            
+            self.memory.append(node)
+            self.index[self._vector_hash(vec)].append(idx)
+            self.phrase_to_index[text] = idx
+            ids.append(idx)
+            
+        self.op_counts['add'] += len(texts)
+        return ids
+
     def connect_nodes(self, index_a: int, index_b: int, weight: float = 0.5, bands: Optional[List[str]] = None):
         """Connects two nodes in the memory graph."""
         if index_a >= len(self.memory) or index_b >= len(self.memory):
