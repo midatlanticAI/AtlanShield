@@ -27,15 +27,46 @@ jobs:
     - name: Start Atlan Server
       run: |
         cd atlan_server
-        python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
-        sleep 10 # Wait for startup
+        python -m uvicorn main:app --host 0.0.0.0 --port 8000 &> server.log &
+        # Wait for server with health check polling
+        for i in {1..30}; do
+          if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            echo "Server is ready!"
+            break
+          fi
+          echo "Waiting for server... attempt $i"
+          sleep 2
+        done
+        # Verify server is responding
+        curl -f http://localhost:8000/health || (cat server.log && exit 1)
 
-    - name: Run Core Verification
+    - name: Run Core Verification (110 tests)
       run: |
-        # Run "core" mode to verify 100% accuracy on critical tests
         python tests/benchmark_universal.py --mode core --output ci_results_core.json
+        echo "Core test completed"
 
-    - name: Check Results
+    - name: Run Deep Logic Test (530 tests)
       run: |
-        # Simple check to ensure exit code 0 and files exist
-        if [ ! -f ci_results_core.json ]; then exit 1; fi
+        python tests/benchmark_universal.py --mode deep --n 500 --output ci_results_deep.json
+        echo "Deep test completed"
+
+    - name: Run Scale Test (1030 tests)
+      run: |
+        python tests/benchmark_universal.py --mode scale --n 1000 --output ci_results_scale.json
+        echo "Scale test completed"
+
+    - name: Verify All Results
+      run: |
+        # Check all result files exist
+        test -f ci_results_core.json || (echo "Core results missing!" && exit 1)
+        test -f ci_results_deep.json || (echo "Deep results missing!" && exit 1)
+        test -f ci_results_scale.json || (echo "Scale results missing!" && exit 1)
+        
+        # Check for failures in results
+        echo "=== Test Summary ==="
+        for f in ci_results_*.json; do
+          echo "$f:"
+          python -c "import json; r=json.load(open('$f')); s=r['summary']; print(f\"  Total: {s['total']}, Passed: {s['passed']}, Failed: {s['failed']}, Errors: {s['errors']}\")"
+          python -c "import json; r=json.load(open('$f')); s=r['summary']; exit(1 if s['failed'] > 0 or s['errors'] > 0 else 0)" || exit 1
+        done
+        echo "All tests passed!"
