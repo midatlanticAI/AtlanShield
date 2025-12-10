@@ -3,7 +3,7 @@ name: Atlan CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "local-ci-fix-antigravity" ]
   pull_request:
     branches: [ "main" ]
 
